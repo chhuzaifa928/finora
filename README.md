@@ -12,34 +12,32 @@
 
 ### Core Capabilities
 - **💸 Intelligent Expense Tracking** - Categorize and monitor daily expenses with dynamic form systems
-- **🎯 Financial Goal Architect** - Set, edit, and visualize savings targets with real-time progress tracking
-- **📊 Investment Management** - Dedicated ledger for tracking asset growth and capital allocations
-- **🧠 Neural Coach (AI)** - Native real-time chat with AI module providing spending analysis and financial recommendations
-- **💰 Salary Reality Check** - Analyze income patterns across locations with comparative tier breakdowns
-- **📈 Receipt Scanning** - OCR-powered receipt capture and expense categorization
+- **🧾 Receipt Scanning** - OCR-powered receipt capture and expense categorization (EasyOCR)
+- **🎯 Financial Goal Architect** - Set, edit, and visualize savings targets with deposit tracking and auto-completion
+- **📈 Investment Management** - Track holdings, live price quotes, price history charts, technical indicators (RSI/MACD/EMA), and portfolio analytics
+- **🧠 Neural Coach (AI)** - On-device-server AI chat providing spending analysis and financial recommendations (no external LLM required)
+- **💰 Salary Reality Check** - Analyze income across ~50 countries using PPP-based cost-of-living tiers with live exchange rates
 
 ---
 
 ## 🛠️ Tech Stack
 
-### Frontend
-- **Framework**: React Native 0.81.5
-- **Router**: Expo Router 6.0.23
-- **State Management**: AsyncStorage (persistent local state)
-- **HTTP Client**: Axios 1.13.6
-- **Charting**: react-native-chart-kit 6.12.0
-- **UI Components**: Expo Vector Icons, React Native Reanimated
+### Frontend (`Finora/`)
+- **Framework**: React Native 0.81.5 + React 19 (New Architecture enabled)
+- **Routing**: Expo Router ~6.0.23 (file-based routing, typed routes)
+- **State Management**: Zustand + TanStack React Query v5 (server cache)
+- **Secure Storage**: expo-secure-store (JWT tokens persisted encrypted)
+- **HTTP Client**: Axios ^1.13.6 (with automatic token refresh interceptor)
+- **Charting**: Victory Native ^41 + @shopify/react-native-skia
+- **UI**: Expo Vector Icons, Reanimated ~4.1, Linear Gradients, Gifted Chat
 
-### Backend
-- **Framework**: Django 5.x + Django REST Framework
-- **Authentication**: JWT (stateful sessions)
-- **AI Integration**: Custom Neural Coach module
-- **Database**: PostgreSQL (recommended for production)
-- **API Structure**: Modular apps (users, ai_coach, salary_reality)
-
-### Infrastructure
-- **Mobile Platforms**: iOS & Android (via Expo)
-- **Web Support**: React web target (preview only)
+### Backend (`finora-backend/`)
+- **Framework**: Django ≥6.0.1 + Django REST Framework ≥3.16
+- **Authentication**: JWT via SimpleJWT (1-day access / 30-day refresh, rotation enabled)
+- **AI Engine**: Local hybrid ML pipeline — TF-IDF/LogisticRegression → PyTorch MLP (`FinoraNet`) → regex fallback for intent classification; rule-based response generation; yfinance for live market data
+- **Database**: SQLite (default) — swap to PostgreSQL for production
+- **Async Tasks**: Celery + Redis (optional; auto price refresh every 15 min)
+- **API Structure**: Modular apps (users, transactions, goals, investments, salary_reality, ai_coach)
 
 ---
 
@@ -47,54 +45,49 @@
 
 ### Prerequisites
 - Node.js 18+ (frontend)
-- Python 3.9+ (backend)
-- npm or yarn (frontend)
+- Python 3.10+ (backend)
+- npm (frontend)
 - pip (backend)
-- Expo CLI (mobile development)
 
 ### Frontend Setup
 
 ```bash
-# Clone repository
-git clone https://github.com/MehboobAli-Portfolio/Finora-App.git
-cd Finora-App/Finora
+# Navigate to frontend
+cd Finora
 
 # Install dependencies
 npm install
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your API_URL
 
 # Run development server
 npm start
 
 # Platform-specific
-npm run ios      # iOS simulator
-npm run android  # Android emulator
+npm run android  # Android build/dev
+npm run ios      # iOS build/dev
 npm run web      # Web preview
 ```
+
+> **API Base URL**: Configured automatically in `services/api.js` — uses your LAN IP on native (derived from the Metro packager host), `127.0.0.1:8000` on web, and `10.0.2.2:8000` on the Android emulator. Make sure the backend is running and reachable from your device.
 
 ### Backend Setup
 
 ```bash
 # Navigate to backend
-cd Finora-App/finora-backend
+cd finora-backend
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+venv\Scripts\activate        # Windows
+source venv/bin/activate     # macOS/Linux
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Environment configuration
-cp .env.example .env
-# Edit .env with database credentials
+# Optional: receipt OCR support
+pip install easyocr
 
 # Database setup
 python manage.py migrate
-python manage.py collectstatic
 
 # Create superuser
 python manage.py createsuperuser
@@ -103,60 +96,91 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
+### Environment Variables (optional)
+
+No `.env` file is required for development — sensible defaults are used. Override in production:
+
+| Variable | Default | Description |
+|---|---|---|
+| `DEBUG` | `True` | Set to `False` in production |
+| `SECRET_KEY` | dev fallback key | **Must** set a strong unique key in production |
+| `EXCHANGE_RATE_API_URL` | exchangerate-api.com | Live FX rates source |
+| `REDIS_URL` | local fallback | Celery/cache broker |
+
 ---
 
 ## 📁 Project Structure
 
 ```
 Finora-App/
-├── Finora/                          # Frontend (React Native)
+├── Finora/                             # Frontend (React Native + Expo Router)
 │   ├── app/
+│   │   ├── _layout.jsx                 # Root stack (React Query + Auth providers)
+│   │   ├── index.jsx                   # Welcome / onboarding gate
+│   │   ├── login.jsx                   # Email/password login
+│   │   ├── register.jsx                # Registration
 │   │   ├── (tabs)/
-│   │   │   ├── _layout.jsx         # Tab navigation
-│   │   │   ├── dashboard.jsx       # Financial overview
-│   │   │   ├── transactions.jsx    # Expense tracking
-│   │   │   ├── goals.jsx           # Goal management
-│   │   │   ├── salary-reality.jsx  # Salary analysis
-│   │   │   └── ai.jsx              # Neural Coach chat
-│   │   └── _layout.jsx
+│   │   │   ├── _layout.jsx             # Floating pill tab bar
+│   │   │   ├── index.jsx               # Dashboard (charts, overview)
+│   │   │   ├── expenses.jsx            # Transaction list + analytics
+│   │   │   ├── goals.jsx               # Goal management
+│   │   │   ├── invest.jsx              # Holdings + portfolio analytics
+│   │   │   ├── salary-reality.jsx      # Salary analysis form/results
+│   │   │   ├── ai.jsx                  # Neural Coach chat
+│   │   │   └── profile.jsx             # Profile (hidden tab, routable)
+│   │   ├── add-expense.jsx             # Modal: new expense + receipt scan
+│   │   ├── add-goal.jsx                # Modal: new goal
+│   │   ├── add-investment.jsx          # Modal: new holding
+│   │   ├── edit-expense.jsx            # Edit transaction
+│   │   ├── edit-goal.jsx               # Edit goal
+│   │   ├── edit-investment.jsx         # Edit holding
+│   │   └── investment-detail/[id].jsx  # Price chart + add units
 │   ├── services/
-│   │   ├── api.js                  # API client configuration
-│   │   ├── authAPI.js              # Auth endpoints
-│   │   ├── aiAPI.js                # AI Coach endpoints
-│   │   └── salaryAPI.js            # Salary analysis endpoints
-│   ├── package.json
-│   └── app.json
+│   │   ├── api.js                      # Axios client, JWT refresh flow, all API groups
+│   │   └── queryClient.js              # React Query configuration
+│   ├── context/
+│   │   └── AuthContext.js              # Auth state (SecureStore-backed session)
+│   ├── store/
+│   │   └── useFinanceStore.js          # Zustand dashboard cache
+│   ├── theme.js                        # Design tokens (colors, spacing, typography)
+│   ├── app.json
+│   └── package.json
 │
-├── finora-backend/                  # Backend (Django)
-│   ├── config/                      # Core Django configuration
-│   │   ├── settings.py              # Settings (INSTALLED_APPS, middleware)
-│   │   ├── urls.py                  # Root URL routing
-│   │   ├── wsgi.py                  # WSGI application
-│   │   └── asgi.py                  # ASGI application
-│   │
-│   ├── users/                       # Authentication & Profile
-│   │   ├── models.py                # User model
-│   │   ├── views.py                 # Auth & dashboard views
-│   │   ├── urls.py                  # User URLs (/api/auth/)
-│   │   └── serializers.py
-│   │
-│   ├── ai_coach/                    # AI Module
-│   │   ├── views.py                 # Chat & insight views
-│   │   ├── urls.py                  # URLs (/api/ai/)
-│   │   ├── ai_logic.py              # AI processing logic
-│   │   ├── ai_model/                # Neural model files
-│   │   └── serializers.py
-│   │
-│   ├── salary_reality/              # Salary Analysis
-│   │   ├── views.py                 # Salary endpoints
-│   │   ├── urls.py                  # URLs (/api/salary/)
-│   │   ├── salary_logic.py          # Analysis algorithms
-│   │   └── serializers.py
-│   │
+├── finora-backend/                     # Backend (Django REST Framework)
+│   ├── settings.py                     # Project settings (root-level)
+│   ├── urls.py                         # Root URL routing (/api/...)
+│   ├── config/                         # Celery application wiring
+│   ├── users/                          # Custom User model, auth, dashboard
+│   │   ├── models.py                   # User(AbstractUser), email login
+│   │   ├── views.py                    # Register/login/refresh/profile/dashboard
+│   │   ├── serializers.py
+│   │   └── urls.py                     # /api/auth/
+│   ├── transactions/                   # Expense/income tracking + OCR
+│   │   ├── models.py                   # Transaction (UUID PK, 13 categories)
+│   │   ├── views.py                    # CRUD, scan_receipt (EasyOCR), analytics
+│   │   └── urls.py                     # /api/transactions/
+│   ├── goals/                          # Savings goals
+│   │   ├── models.py                   # Goal, GoalDeposit (auto-progress)
+│   │   ├── views.py
+│   │   └── urls.py                     # /api/goals/
+│   ├── investments/                    # Portfolio tracking
+│   │   ├── models.py                   # Asset, Holding, PriceHistory (+indicators)
+│   │   ├── views.py                    # CRUD, quotes, search, chart, analytics
+│   │   ├── tasks.py                    # Celery price updates
+│   │   ├── continuous_pipeline.py      # Price collection + indicator computation
+│   │   └── urls.py                     # /api/investments/
+│   ├── salary_reality/                 # PPP cost-of-living engine
+│   │   ├── models.py                   # SalaryProfile, SalarySnapshot
+│   │   ├── salary_logic.py             # Tier analysis, PPP factors, FX rates
+│   │   └── urls.py                     # /api/salary/
+│   ├── ai_coach/                       # Neural Coach AI
+│   │   ├── ai_logic.py                 # Intent cascade + rule-based responses
+│   │   ├── ml_model.py                 # FinoraNet (PyTorch MLP)
+│   │   ├── intent_sklearn.py           # TF-IDF + LogisticRegression classifier
+│   │   ├── ai_model/                   # Trained weights (.pth, .joblib)
+│   │   └── urls.py                     # /api/ai/
 │   ├── manage.py
 │   └── requirements.txt
-│
-├── scripts/                         # Utility scripts
 ├── .gitignore
 └── README.md
 ```
@@ -165,85 +189,118 @@ Finora-App/
 
 ## 🔌 API Endpoints
 
+Base URL: `http://<host>:8000/api/`
+
 ### Authentication
 ```
-POST   /api/auth/register/          - User registration
-POST   /api/auth/login/              - User login (JWT)
-POST   /api/auth/logout/             - User logout
+POST   /api/auth/register/           - User registration
+POST   /api/auth/login/              - User login (returns JWT pair)
+POST   /api/auth/refresh/            - Refresh access token
 GET    /api/auth/profile/            - Get user profile
 PUT    /api/auth/profile/            - Update user profile
-```
-
-### Dashboard
-```
 GET    /api/auth/dashboard/          - Financial overview (balance, expenses, goals)
-```
-
-### AI Coach
-```
-POST   /api/ai/chat/                 - Send message to AI
-GET    /api/ai/chat/history/         - Retrieve chat history
-POST   /api/ai/insight/              - Get spending insights
-```
-
-### Salary Reality
-```
-POST   /api/salary/analyse/          - Analyze salary across locations
-GET    /api/salary/tiers/            - Get salary tier data
 ```
 
 ### Transactions
 ```
-GET    /api/transactions/            - List all transactions
-POST   /api/transactions/            - Create new transaction
+GET    /api/transactions/            - List transactions
+POST   /api/transactions/            - Create transaction
+GET    /api/transactions/{id}/       - Retrieve transaction
 PUT    /api/transactions/{id}/       - Update transaction
 DELETE /api/transactions/{id}/       - Delete transaction
+POST   /api/transactions/scan/       - OCR receipt scan (multipart upload)
+GET    /api/transactions/analytics/  - Spending analytics
 ```
 
 ### Goals
 ```
-GET    /api/goals/                   - List financial goals
-POST   /api/goals/                   - Create new goal
-PUT    /api/goals/{id}/              - Update goal
-DELETE /api/goals/{id}/              - Delete goal
+GET    /api/goals/                       - List goals
+POST   /api/goals/                       - Create goal
+GET    /api/goals/{id}/                  - Goal detail
+PUT    /api/goals/{id}/                  - Update goal
+DELETE /api/goals/{id}/                  - Delete goal
+GET    /api/goals/{id}/deposits/         - List deposits for a goal
+POST   /api/goals/{id}/deposits/         - Add deposit (auto-updates progress)
 ```
+
+### Investments
+```
+GET/POST          /api/investments/assets/            - Asset catalog
+GET/POST          /api/investments/holdings/          - List/create holdings
+GET/PUT/DELETE    /api/investments/holdings/{id}/     - Holding detail
+POST              /api/investments/holdings/{id}/add-units/ - Buy more units
+GET               /api/investments/price-history/     - Historical prices
+GET               /api/investments/quote/?symbol=     - Live quote (yfinance)
+POST              /api/investments/refresh-prices/    - Force price refresh
+GET               /api/investments/search/?q=         - Symbol search
+GET               /api/investments/chart/             - Chart data series
+GET               /api/investments/analytics/         - Portfolio analytics
+```
+
+### Salary Reality
+```
+POST   /api/salary/analyse/          - Analyze salary across locations (PPP tiers)
+GET    /api/salary/profile/          - Get saved salary profile
+PUT    /api/salary/profile/          - Update salary profile
+```
+
+### AI Coach (Neural Coach)
+```
+GET    /api/ai/insight/              - Proactive spending insights
+POST   /api/ai/chat/                 - Send message to AI coach
+GET    /api/ai/chat/history/         - Retrieve conversation history
+```
+
+All endpoints require `Authorization: Bearer <access_token>` except register/login/refresh.
 
 ---
 
-## 🔐 Security Best Practices
+## 🧠 How the Neural Coach Works
+
+The AI Coach runs **entirely locally** — no external LLM API calls, no API keys:
+
+1. **Intent Classification Cascade**
+   - Stage 1: TF-IDF + Logistic Regression (confidence ≥ 0.28)
+   - Stage 2: PyTorch `FinoraNet` bag-of-words MLP (fallback, confidence ≥ 0.22)
+   - Stage 3: Regex keyword matcher (final fallback)
+2. **Response Generation** — Rule-based templates personalized with your real data (balance, budgets, goals, portfolio health score)
+3. **Live Market Data** — yfinance integration for `$TICKER` queries and cached index/crypto quotes (SPY, BTC, QQQ, Gold; 5-min cache)
+
+Supported intents include budgeting, balance checks, spending analysis, goals, portfolio review, investing basics, debt, tax, crypto, retirement, real estate, and market status.
+
+---
+
+## 🔐 Security Notes
 
 ✅ **Implemented:**
-- JWT-based authentication
-- Stateful session management
-- Environment variable protection
+- JWT authentication with token rotation
+- Tokens stored in device SecureStore (encrypted)
+- All data endpoints enforce per-user queryset filtering
+- Password validation on registration
 
-⚠️ **Recommended Enhancements:**
+⚠️ **Required before production:**
 ```python
-# Add to Django settings
+# In finora-backend/settings.py (via environment):
+DEBUG = False
+SECRET_KEY = <strong unique key>
+ALLOWED_HOSTS = ["yourdomain.com"]
+CORS_ALLOWED_ORIGINS = ["https://your-app-domain"]
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 X_FRAME_OPTIONS = 'DENY'
-SECURE_CONTENT_SECURITY_POLICY = {...}
 ```
+
+> ⚠️ The current defaults (`DEBUG=True`, wildcard hosts/CORS, SQLite) are for **local development only**. Do not deploy without hardening.
 
 ---
 
 ## 🧪 Testing
 
-### Run Tests
-```bash
-# Backend tests
-cd finora-backend
-pytest tests/ -v
+> ⚠️ A formal test suite is not yet in place — this is a known gap tracked for upcoming work.
 
-# Frontend tests
-cd Finora
-npm test
-```
-
-### Test Coverage
-- Unit tests for business logic
+Planned coverage:
+- Unit tests for business logic (salary engine, AI intent cascade, goal deposits)
 - Integration tests for API endpoints
 - E2E tests for critical user flows
 
@@ -252,15 +309,14 @@ npm test
 ## 📊 Performance Optimization
 
 ### Frontend
-- Memoize expensive component renders
-- Implement lazy loading for transaction lists
-- Optimize chart rendering for large datasets
+- React Query caching (5-min stale time) + pull-to-refresh refetching
+- Lazy route loading via Expo Router
+- Skia-accelerated chart rendering
 
 ### Backend
-- Database query optimization (select_related, prefetch_related)
-- Implement caching for salary tier data
-- Rate limiting for AI chat API
-- Pagination for list endpoints
+- Module-level caching for market quotes (5 min) and FX rates (1 hour)
+- Celery beat scheduled price updates (15-min interval)
+- Planned: pagination for list endpoints, rate limiting for AI chat
 
 ---
 
@@ -268,25 +324,27 @@ npm test
 
 ### Backend (Production)
 ```bash
-# Using Gunicorn + Nginx
-pip install gunicorn
-gunicorn config.wsgi:application --bind 0.0.0.0:8000
+pip install gunicorn psycopg2-binary
+gunicorn --bind 0.0.0.0:8000 config.wsgi:application  # if using config package
+# or: gunicorn --bind 0.0.0.0:8000 wsgi:application
 
-# Environment setup
+# Environment
 export DEBUG=False
 export SECRET_KEY=your-secret-key
-export DATABASE_URL=postgresql://user:password@host/db
+# Configure DATABASE_URL for PostgreSQL and run migrations
 ```
 
 ### Frontend (Production)
 ```bash
-# Build for EAS
+# Build with EAS
 eas build --platform all
 
-# Or build locally for specific platform
-npm run build:ios
-npm run build:android
+# Or local builds
+npx expo run:ios --configuration Release
+npx expo run:android --variant release
 ```
+
+> **Note:** Before building for production, replace the dev-only base URL logic in `Finora/services/api.js` with your production API host (an `EXPO_PUBLIC_API_URL` environment variable is recommended).
 
 ---
 
@@ -353,9 +411,9 @@ Report issues via GitHub Issues with:
 
 ## 📞 Support & Contact
 
-- **Author**: Mehboob Ali
-- **Email**: mehboob56ali78@gmail.com
-- **Repository**: [MehboobAli-Portfolio/Finora-App](https://github.com/MehboobAli-Portfolio/Finora-App)
+- **Author**: Chaudhary Huzaifa
+- **Email**: huzaifa928.fui@gmail.com
+- **Repository**: [chhuzaifa928/finora](https://github.com/chhuzaifa928/finora)
 
 ---
 
@@ -373,5 +431,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-**Last Updated**: April 19, 2026  
+**Last Updated**: August 24, 2026
 **Status**: Active Development

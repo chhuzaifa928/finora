@@ -21,7 +21,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#2563EB"
       },
-      "package": "com.mehboob_ali.finora"
+      "package": "com.chhuzaifa928.finora"
     },
     "web": {
       "favicon": "./assets/favicon.png",
