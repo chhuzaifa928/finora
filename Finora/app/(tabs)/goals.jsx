@@ -1,0 +1,276 @@
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import React, { useState, useCallback } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity, RefreshControl, ActivityIndicator, Alert, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { goalsAPI } from '../../services/api';
+
+const GOAL_ICONS = {
+  savings: 'cash',
+  emergency: 'shield-checkmark',
+  investment: 'trending-up',
+  travel: 'airplane',
+  vacation: 'airplane',
+  education: 'school',
+  home: 'home',
+  car: 'car',
+  retirement: 'umbrella',
+  debt: 'card',
+  other: 'flag'
+};
+
+const GOAL_COLORS = {
+  savings: '#2563EB',
+  emergency: '#EF4444',
+  investment: '#10B981',
+  travel: '#F59E0B',
+  vacation: '#F59E0B',
+  education: '#8B5CF6',
+  home: '#10B981',
+  car: '#3B82F6',
+  retirement: '#6366F1',
+  debt: '#F97316',
+  other: '#9CA3AF'
+};
+
+const fmt = a => `$${parseFloat(a || 0).toLocaleString('en-US', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0
+})}`;
+
+export default function GoalsScreen() {
+  const insets = useSafeAreaInsets();
+  const [goals, setGoals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState('all'); // all, active, completed
+
+  const loadGoals = async () => {
+    try {
+      const params = {};
+      if (filter === 'completed') params.completed = 'true';
+      else if (filter === 'active') params.completed = 'false';
+      const res = await goalsAPI.list(params);
+      setGoals(res.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(useCallback(() => {
+    loadGoals();
+  }, [filter]));
+
+  const handleDelete = id => {
+    Alert.alert('Delete Goal', 'Are you sure you want to delete this goal?', [{
+      text: 'Cancel',
+      style: 'cancel'
+    }, {
+      text: 'Delete',
+      style: 'destructive',
+      onPress: async () => {
+        await goalsAPI.delete(id);
+        loadGoals();
+      }
+    }]);
+  };
+
+  const totalTargeted = goals.reduce((s, g) => s + parseFloat(g.target_amount), 0);
+  const totalSaved = goals.reduce((s, g) => s + parseFloat(g.current_amount), 0);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#F7F9FC' }}>
+      <LinearGradient
+        colors={['#1E3A8A', '#2563EB', '#3B82F6']}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={[{ paddingHorizontal: 20, paddingBottom: 24, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, shadowColor: '#2563EB', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 8, zIndex: 10 }, { paddingTop: insets.top + 10 }]}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+          <View style={{ width: 80, height: 80, borderRadius: 15, backgroundColor: '#FFFFFF', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 8 }}>
+            <Image 
+              source={require('../../assets/icons/goal.png')} 
+              style={{ 
+                width: 80, 
+                height: 80, 
+                transform: [{ scale: 1.15 }]
+              }} 
+              resizeMode="contain"
+            />
+          </View>
+          <View>
+            <Text style={{ fontSize: 26, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.8 }}>Financial Goals</Text>
+            <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.9)', fontWeight: '600', marginTop: 2 }}>Track your future milestones.</Text>
+          </View>
+        </View>
+      </LinearGradient>
+
+      {/* Goals Progress Overview */}
+      <View style={{ margin: 16, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 3 }}>
+        <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 12 }}>Overall Progress</Text>
+        
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+          <View>
+            <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>Total Saved</Text>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#10B981' }}>{fmt(totalSaved)}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>Total Target</Text>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#111827' }}>{fmt(totalTargeted)}</Text>
+          </View>
+        </View>
+
+        <View style={{ height: 12, backgroundColor: '#F3F4F6', borderRadius: 6, overflow: 'hidden', marginBottom: 16 }}>
+          <View style={{ width: `${totalTargeted > 0 ? (totalSaved / totalTargeted) * 100 : 0}%`, height: '100%', backgroundColor: '#2563EB', borderRadius: 6 }} />
+        </View>
+
+        <View style={{ flexDirection: 'row', paddingTop: 16, borderTopWidth: 1, borderTopColor: '#F3F4F6' }}>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#111827' }}>{goals.filter(g => !g.is_completed).length}</Text>
+            <Text style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2, fontWeight: '600' }}>Active</Text>
+          </View>
+          <View style={{ width: 1, backgroundColor: '#F3F4F6', marginHorizontal: 8 }} />
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#111827' }}>{goals.filter(g => g.is_completed).length}</Text>
+            <Text style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2, fontWeight: '600' }}>Completed</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Filters */}
+      <View style={{flexDirection: 'row',paddingHorizontal: 16,gap: 8,marginBottom: 4}}>
+        {['all', 'active', 'completed'].map(f => (
+          <TouchableOpacity
+            key={f}
+            style={[{paddingHorizontal: 18,paddingVertical: 9,borderRadius: 20,backgroundColor: '#FFFFFF',borderWidth: 1.5,borderColor: '#E5E7EB'}, filter === f && {backgroundColor: '#2563EB',borderColor: '#2563EB'}]}
+            onPress={() => setFilter(f)}
+          >
+            <Text style={[{fontSize: 13,fontWeight: '600',color: '#6B7280'}, filter === f && {color: '#FFFFFF'}]}>
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </Text>
+          </TouchableOpacity>))}
+      </View>
+
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color="#2563EB" />
+      ) : (
+        <KeyboardAwareScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ padding: 20, paddingBottom: 160 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadGoals(); }} tintColor="#2563EB" />}
+        >
+          {goals.length === 0 ? (
+            <View style={{alignItems: 'center',paddingVertical: 60}}>
+              <Ionicons name="flag-outline" size={48} color="#D1D5DB" />
+              <Text style={{fontSize: 18,fontWeight: '700',color: '#374151',marginTop: 16,marginBottom: 8}}>No goals yet</Text>
+              <Text style={{fontSize: 14,color: '#9CA3AF',textAlign: 'center',marginBottom: 24}}>Set financial goals to track your progress</Text>
+              <TouchableOpacity style={{backgroundColor: '#2563EB',paddingHorizontal: 24,paddingVertical: 12,borderRadius: 12}} onPress={() => router.push('/add-goal')}>
+                <Text style={{color: '#FFFFFF',fontWeight: '700',fontSize: 14}}>+ Add Goal</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            goals.map(goal => (
+              <GoalCard 
+                key={goal.id} 
+                goal={goal} 
+                onDelete={() => handleDelete(goal.id)} 
+                onEdit={() => router.push({
+                  pathname: '/edit-goal',
+                  params: { id: goal.id }
+                })}
+                onUpdate={loadGoals} 
+              />
+            ))
+          )}
+
+        </KeyboardAwareScrollView>
+      )}
+
+      {/* Floating Action Button */}
+      <TouchableOpacity 
+        style={{
+          position: 'absolute',
+          bottom: 140,
+          right: 20,
+          width: 64,
+          height: 64,
+          borderRadius: 32,
+          backgroundColor: '#2563EB',
+          justifyContent: 'center',
+          alignItems: 'center',
+          shadowColor: '#2563EB',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.4,
+          shadowRadius: 12,
+          elevation: 10
+        }}
+        activeOpacity={0.8}
+        onPress={() => router.push('/add-goal')}
+      >
+        <Ionicons name="add" size={32} color="#FFFFFF" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function GoalCard({
+  goal,
+  onDelete,
+  onEdit,
+  onUpdate
+}) {
+  const icon = GOAL_ICONS[goal.category] || 'flag';
+  const color = GOAL_COLORS[goal.category] || '#9CA3AF';
+  const progress = goal.progress_percentage || goal.progress_pct || 0;
+
+  return (
+    <TouchableOpacity 
+      activeOpacity={0.8}
+      onPress={onEdit}
+      style={{backgroundColor: '#FFFFFF',borderRadius: 16,padding: 16,marginBottom: 12,shadowColor: '#000',shadowOffset: {width: 0,height: 2},shadowOpacity: 0.06,shadowRadius: 8,elevation: 4}}
+    >
+      <View style={{flexDirection: 'row',alignItems: 'center',marginBottom: 14,gap: 12}}>
+        <View style={[{width: 48,height: 48,borderRadius: 14,justifyContent: 'center',alignItems: 'center'}, { backgroundColor: `${color}18` }]}>
+          <Ionicons name={icon} size={24} color={color} />
+        </View>
+        <View style={{flex: 1}}>
+          <Text style={{fontSize: 15,fontWeight: '700',color: '#111827'}}>{goal.name}</Text>
+          <Text style={{fontSize: 12,color: '#9CA3AF',marginTop: 2,textTransform: 'capitalize'}}>{goal.category}</Text>
+        </View>
+        {goal.is_completed && (
+          <View style={{flexDirection: 'row',alignItems: 'center',gap: 3,backgroundColor: '#D1FAE5',paddingHorizontal: 8,paddingVertical: 4,borderRadius: 8, marginRight: 4}}>
+            <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+            <Text style={{fontSize: 11,fontWeight: '600',color: '#10B981'}}>Done</Text>
+          </View>
+        )}
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          <TouchableOpacity onPress={onDelete} style={{ padding: 4 }}>
+            <Ionicons name="trash-outline" size={18} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+
+      {/* Progress */}
+      <View style={{}}>
+        <View style={{flexDirection: 'row',justifyContent: 'space-between',marginBottom: 8}}>
+          <Text style={{fontSize: 15,fontWeight: '700',color: '#111827'}}>
+            {fmt(goal.current_amount)} <Text style={{fontSize: 13,fontWeight: '400',color: '#9CA3AF'}}>/ {fmt(goal.target_amount)}</Text>
+          </Text>
+          <Text style={[{fontSize: 15,fontWeight: '700'}, { color }]}>{progress}%</Text>
+        </View>
+        <View style={{height: 8,backgroundColor: '#F3F4F6',borderRadius: 4,overflow: 'hidden'}}>
+          <View style={[{height: '100%',borderRadius: 4}, { width: `${progress}%`, backgroundColor: color }]} />
+        </View>
+        {goal.deadline && (
+          <Text style={{fontSize: 12,color: '#6B7280',marginTop: 8}}>🎯 Target: {goal.deadline}</Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
